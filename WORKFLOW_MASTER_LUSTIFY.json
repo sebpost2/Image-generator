@@ -1,0 +1,153 @@
+{
+  "4": {
+    "inputs": { "ckpt_name": "lustifySDXLNSFW_apexV8.safetensors" },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": { "title": "1) CAMBIAR checkpoint aca -- lustifySDXLNSFW_apexV8.safetensors o bigLust_v16.safetensors" }
+  },
+  "5": {
+    "inputs": { "width": 1024, "height": 1024, "batch_size": 1 },
+    "class_type": "EmptyLatentImage",
+    "_meta": { "title": "2) Resolucion -- 1024x1024 default. LUSTIFY V8 tambien soporta 1536: 1536x1536, 1344x1664, 1280x1920, 1152x2048 (y sus rotaciones)" }
+  },
+  "6": {
+    "inputs": {
+      "text": "A photorealistic scene of a young adult woman with long brown wavy hair riding a man in a modern city apartment bedroom at night. She sits on top of him, nude, his penis penetrating her vagina, visible clearly where their bodies meet. Correct human anatomy, natural hands with five fingers each, natural matte skin, subtle skin sheen. The man is a muscular adult torso, face out of frame, his hands resting on her hips. Warm intimate lamp lighting, floor-to-ceiling window showing a city skyline at night, contemporary interior, sharp focus, natural color balance, detailed face, symmetric eyes",
+      "clip": ["4", 1]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "3) PROMPT POSITIVO -- CAMBIAR la escena aca. Estilo natural/descriptivo funciona mejor que tags sueltos" }
+  },
+  "7": {
+    "inputs": {
+      "text": "ugly, blurry, worst quality, low quality, bad anatomy, deformed, watermark, signature, lowres, bad hands, mutated hands, extra fingers, missing fingers, bad eyes, asymmetric eyes, detailed male face, 2girls, child, cartoon, 3d render",
+      "clip": ["4", 1]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "4) NEGATIVO -- IMPORTANTE: si hay pareja masculina en la escena, NUNCA agregar 'man'/'male' aca (misma trampa que rompio Illustrious)" }
+  },
+  "3": {
+    "inputs": {
+      "seed": 123456789,
+      "steps": 30,
+      "cfg": 3.5,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": ["4", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["5", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "5) KSampler -- settings oficiales del creador de LUSTIFY: cfg 3.5, dpmpp_2m_sde, karras, 30 steps" }
+  },
+  "8": {
+    "inputs": { "samples": ["3", 0], "vae": ["4", 2] },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE Decode" }
+  },
+  "14": {
+    "inputs": { "model_name": "bbox/face_yolov8m.pt" },
+    "class_type": "UltralyticsDetectorProvider",
+    "_meta": { "title": "Detector de cara" }
+  },
+  "14s": {
+    "inputs": { "model_name": "sam_vit_b_01ec64.pth", "device_mode": "AUTO" },
+    "class_type": "SAMLoader",
+    "_meta": { "title": "SAM -- afina la mascara del detailer (mejor que bbox solo)" }
+  },
+  "15": {
+    "inputs": {
+      "guide_size": 1024,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": 111222333,
+      "steps": 22,
+      "cfg": 4,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 0.4,
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 1.5,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "portrait, close-up, face, 1girl",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 20,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": ["8", 0],
+      "model": ["4", 0],
+      "clip": ["4", 1],
+      "vae": ["4", 2],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "bbox_detector": ["14", 0],
+      "sam_model_opt": ["14s", 0]
+    },
+    "class_type": "FaceDetailer",
+    "_meta": { "title": "6) Face Detailer -- settings reales del creador de LUSTIFY (guide/max 1536 en el original, bajado a 1024 para velocidad -- subir a 1536 si hace falta mas nitidez)" }
+  },
+  "16d": {
+    "inputs": { "model_name": "bbox/hand_yolov8s.pt" },
+    "class_type": "UltralyticsDetectorProvider",
+    "_meta": { "title": "Detector de manos" }
+  },
+  "16": {
+    "inputs": {
+      "guide_size": 1024,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": 444555666,
+      "steps": 20,
+      "cfg": 3.5,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 0.4,
+      "feather": 10,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 15,
+      "bbox_crop_factor": 1.8,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "close-up, hand, fingers",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 20,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": ["15", 0],
+      "model": ["4", 0],
+      "clip": ["4", 1],
+      "vae": ["4", 2],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "bbox_detector": ["16d", 0],
+      "sam_model_opt": ["14s", 0]
+    },
+    "class_type": "FaceDetailer",
+    "_meta": { "title": "7) Hand Detailer -- mismo nodo FaceDetailer, apuntado al detector de manos" }
+  },
+  "9": {
+    "inputs": { "filename_prefix": "lustify_scene", "images": ["16", 0] },
+    "class_type": "SaveImage",
+    "_meta": { "title": "8) Guardar imagen final" }
+  }
+}
