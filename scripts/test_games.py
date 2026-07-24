@@ -68,6 +68,21 @@ class TestOldStringFormatMigration(GamesConfigTestCase):
         self.assertEqual(on_disk["games"]["nsfwgame"]["dir"], "D:/games/nsfw/scenes")
 
 
+class TestGetWorkflow(GamesConfigTestCase):
+    """get_workflow(name) looks up any registered game's workflow, not just the active one --
+    needed so a caller can resolve a scene's own row-level game to its prompt style even while
+    a different game is active (see writer-generator's manifest_store.resolve_workflow)."""
+
+    def test_get_workflow_for_non_active_registered_game(self):
+        games.add_game("animegame", "D:/games/anime/scenes", workflow="D:/wf/anime.json")
+        # nsfwgame (default) stays active; animegame is not.
+        self.assertEqual(games.get_workflow("animegame"), Path("D:/wf/anime.json"))
+
+    def test_get_workflow_for_unregistered_game_raises_key_error(self):
+        with self.assertRaises(KeyError):
+            games.get_workflow("no_such_game")
+
+
 class TestAddGameWithWorkflow(GamesConfigTestCase):
     def test_add_game_with_explicit_workflow(self):
         games.add_game("animegame", "D:/games/anime/scenes", workflow="D:/wf/anime.json")

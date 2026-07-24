@@ -81,6 +81,14 @@ def get_active_workflow():
     return Path(data["games"][data["active"]]["workflow"])
 
 
+def get_workflow(name):
+    """The workflow for any registered game, not just the active one -- lets a caller resolve
+    a scene's own row-level game to its prompt style even when a different game is active.
+    Raises KeyError for an unregistered name, same as a plain dict lookup would."""
+    data = load()
+    return Path(data["games"][name]["workflow"])
+
+
 def set_active(name):
     data = load()
     if name not in data["games"]:
