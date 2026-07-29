@@ -68,6 +68,46 @@ class TestOldStringFormatMigration(GamesConfigTestCase):
         self.assertEqual(on_disk["games"]["nsfwgame"]["dir"], "D:/games/nsfw/scenes")
 
 
+class TestOldEntryMissingSettingMigration(GamesConfigTestCase):
+    """games.json written before per-game settings existed is missing the "setting" key
+    entirely. Loading it must not crash and must default that game's setting to blank."""
+
+    def setUp(self):
+        super().setUp()
+        self.tmp.write_text(json.dumps({
+            "active": "nsfwgame",
+            "games": {"nsfwgame": {"dir": "D:/games/nsfw/scenes", "workflow": games.DEFAULT_WORKFLOW}},
+        }), encoding="utf-8")
+
+    def test_missing_setting_key_defaults_to_blank(self):
+        self.assertEqual(games.get_setting("nsfwgame"), "")
+
+    def test_missing_setting_key_healed_on_disk(self):
+        games.load()
+        on_disk = json.loads(self.tmp.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["games"]["nsfwgame"]["setting"], "")
+
+
+class TestGetSetting(GamesConfigTestCase):
+    def test_get_setting_for_active_game_when_name_omitted(self):
+        games.add_game("animegame", "D:/games/anime/scenes", setting="medieval fantasy world")
+        games.set_active("animegame")
+        self.assertEqual(games.get_setting(), "medieval fantasy world")
+
+    def test_get_setting_for_non_active_registered_game(self):
+        games.add_game("animegame", "D:/games/anime/scenes", setting="medieval fantasy world")
+        # nsfwgame (default) stays active; animegame is not.
+        self.assertEqual(games.get_setting("animegame"), "medieval fantasy world")
+
+    def test_get_setting_for_unregistered_game_raises_key_error(self):
+        with self.assertRaises(KeyError):
+            games.get_setting("no_such_game")
+
+    def test_add_game_without_setting_defaults_to_blank(self):
+        games.add_game("plaingame", "D:/games/plain/scenes")
+        self.assertEqual(games.get_setting("plaingame"), "")
+
+
 class TestGetWorkflow(GamesConfigTestCase):
     """get_workflow(name) looks up any registered game's workflow, not just the active one --
     needed so a caller can resolve a scene's own row-level game to its prompt style even while

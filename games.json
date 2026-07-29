@@ -1,0 +1,15 @@
+{
+  "active": "animegame",
+  "games": {
+    "nsfwgame": {
+      "dir": "D:/2_MyScripts/PERSONAL/nsfwgame/assets/img/scenes",
+      "workflow": "D:/2_MyScripts/PERSONAL/Image-generator/WORKFLOW_MASTER_LUSTIFY.json",
+      "setting": ""
+    },
+    "animegame": {
+      "dir": "D:/2_MyScripts/PERSONAL/animegame/assets/img/scenes",
+      "workflow": "D:/2_MyScripts/PERSONAL/Image-generator/WORKFLOW_ANIME_ONEOBSESSION.json",
+      "setting": "medieval fantasy world -- stone architecture, guilds, taverns, magic; no modern technology, vehicles, or clothing"
+    }
+  }
+}

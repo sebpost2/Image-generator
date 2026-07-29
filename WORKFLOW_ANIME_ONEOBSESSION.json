@@ -1,0 +1,392 @@
+{
+  "4": {
+    "inputs": {
+      "ckpt_name": "oneObsession_v23.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "1) Checkpoint -- oneObsession_v23 (base Illustrious, anime)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "2) Resolucion -- 832x1216 retrato vertical. Otras nativas SDXL: 1024x1024, 896x1152, 1216x832"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "masterpiece, best quality, absurdres, 1girl, solo, portrait, rogue trader, noblewoman, ornate gilded military coat, high collar, aquila medallion, cybernetic eye, pale skin, black hair, hair bun, stern expression, gothic architecture, candlelight, dark fantasy, grimdark, warhammer 40k, looking at viewer, detailed face",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "3) PROMPT POSITIVO -- estilo TAGS danbooru (no descripciones largas). Mantener el prefijo de calidad 'masterpiece, best quality, absurdres'"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "worst quality, low quality, lowres, bad anatomy, bad hands, extra fingers, missing fingers, extra hands, extra limbs, extra arms, watermark, signature, jpeg artifacts, censored, mosaic censoring, blurry, 2girls, child, photorealistic, 3d, flat color, flat shading, empty eyes, blank eyes",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "4) NEGATIVO -- IMPORTANTE: si hay pareja masculina en la escena, NUNCA agregar 'man'/'male' aca (trampa conocida de Illustrious). 'flat color, flat shading, empty eyes, blank eyes' agregado 2026-07-15: bug conocido de la comunidad Illustrious/NoobAI donde el iris sale solido/sin detalle -- 'flat color' es un tag booru real, la comunidad lo suprime con una LoRA a peso negativo; esto es el equivalente gratis via negativo. Sin re-test todavia"
+    }
+  },
+  "3": {
+    "inputs": {
+      "seed": 123456789,
+      "steps": 12,
+      "cfg": 6,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "5) KSampler -- settings tipicos Illustrious: euler_ancestral, cfg 5-7, 25-30 steps (vs cfg 3.5 de LUSTIFY)"
+    }
+  },
+  "18": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "upscale_method": "nearest-exact",
+      "scale_by": 1.4
+    },
+    "class_type": "LatentUpscaleBy",
+    "_meta": {
+      "title": "5b) Highres fix -- upscale de latente 1.4x (ver 04_tecnicas_avanzadas_pipeline.md: estandar para cuerpo completo/planos generales, ninguno de los dos workflows lo tenia)"
+    }
+  },
+  "19": {
+    "inputs": {
+      "seed": 555444333,
+      "steps": 20,
+      "cfg": 6,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.4,
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "5c) Highres fix -- segunda pasada denoise bajo (0.4) para agregar detalle sin cambiar composicion. Mas VRAM/tiempo: placa de 8GB, probar primero antes de correr en batch"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "14": {
+    "inputs": {
+      "model_name": "bbox/face_yolov8m.pt"
+    },
+    "class_type": "UltralyticsDetectorProvider",
+    "_meta": {
+      "title": "Detector de cara"
+    }
+  },
+  "14s": {
+    "inputs": {
+      "model_name": "sam_vit_b_01ec64.pth",
+      "device_mode": "AUTO"
+    },
+    "class_type": "SAMLoader",
+    "_meta": {
+      "title": "SAM -- afina la mascara del detailer"
+    }
+  },
+  "15": {
+    "inputs": {
+      "guide_size": 768,
+      "guide_size_for": true,
+      "max_size": 768,
+      "seed": 111222333,
+      "steps": 12,
+      "cfg": 6,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.55,
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.35,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 1.5,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "[CONCAT]portrait, close-up, face, 1girl",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 20,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": [
+        "8",
+        0
+      ],
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "bbox_detector": [
+        "14",
+        0
+      ],
+      "sam_model_opt": [
+        "14s",
+        0
+      ]
+    },
+    "class_type": "FaceDetailer",
+    "_meta": {
+      "title": "6) Face Detailer -- denoise subido 0.4 -> 0.55 (2026-07-14, CONFIRMADO con A/B test): en cuerpo completo la cara es un crop chico que FaceDetailer sube mucho de resolucion antes de redibujar; a 0.4 no tenia libertad para reconstruir bien y salia un ojo deforme (cuna oscura triangular). A 0.55 ambos ojos salen simetricos y bien formados, mismo seed/composicion. bbox_threshold bajado 0.5 -> 0.35 (mismo dia, sin re-test): angulos de cabeza extremos (boca abajo, perfil, mirando arriba) dan deteccion de cara de baja confianza -- a 0.35 el detector dispara igual en vez de saltear el nodo entero. No soluciona el caso limite de una cara ya renderizada sin ojos en la base (garbage in, garbage out), solo evita que el detailer se salte caras angulares detectables"
+    }
+  },
+  "16d": {
+    "inputs": {
+      "model_name": "bbox/hand_yolov8s.pt"
+    },
+    "class_type": "UltralyticsDetectorProvider",
+    "_meta": {
+      "title": "Detector de manos"
+    }
+  },
+  "16": {
+    "inputs": {
+      "guide_size": 1024,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": 444555666,
+      "steps": 20,
+      "cfg": 6,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.45,
+      "feather": 10,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 15,
+      "bbox_crop_factor": 2.0,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "[CONCAT]close-up, hand, fingers",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 20,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": [
+        "15",
+        0
+      ],
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "bbox_detector": [
+        "16d",
+        0
+      ],
+      "sam_model_opt": [
+        "14s",
+        0
+      ]
+    },
+    "class_type": "FaceDetailer",
+    "_meta": {
+      "title": "7) Hand Detailer -- crop_factor 2.0 / denoise 0.45 heredados del master (leccion 13)"
+    }
+  },
+  "17d": {
+    "inputs": {
+      "model_name": "segm/person_yolov8m-seg.pt"
+    },
+    "class_type": "UltralyticsDetectorProvider",
+    "_meta": {
+      "title": "Detector de cuerpo/persona"
+    }
+  },
+  "17": {
+    "inputs": {
+      "guide_size": 1024,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": 777888999,
+      "steps": 18,
+      "cfg": 6,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.35,
+      "feather": 10,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 1.2,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "[CONCAT]full body, correct anatomy, natural proportions, natural limbs",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 20,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": [
+        "16",
+        0
+      ],
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "bbox_detector": [
+        "17d",
+        0
+      ],
+      "sam_model_opt": [
+        "14s",
+        0
+      ]
+    },
+    "class_type": "FaceDetailer",
+    "_meta": {
+      "title": "8) Body/Limb Detailer -- mismo fix ya validado en WORKFLOW_MASTER_LUSTIFY.json (leccion 17): crop_factor/denoise bajos a proposito para no re-difundir casi toda la imagen. person_yolov8m-seg.pt ya instalado en models/ultralytics/segm/"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "anime_portrait",
+      "images": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "9) Guardar imagen final"
+    }
+  }
+}

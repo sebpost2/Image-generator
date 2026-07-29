@@ -24,9 +24,13 @@ DEFAULT_DIR = "D:/2_MyScripts/PERSONAL/nsfwgame/assets/img/scenes"
 DEFAULT_WORKFLOW = "D:/2_MyScripts/PERSONAL/Image-generator/WORKFLOW_MASTER_LUSTIFY.json"
 
 
+DEFAULT_SETTING = ""
+
+
 def _default_data():
     return {"active": DEFAULT_GAME,
-            "games": {DEFAULT_GAME: {"dir": DEFAULT_DIR, "workflow": DEFAULT_WORKFLOW}}}
+            "games": {DEFAULT_GAME: {"dir": DEFAULT_DIR, "workflow": DEFAULT_WORKFLOW,
+                                     "setting": DEFAULT_SETTING}}}
 
 
 def load():
@@ -50,6 +54,12 @@ def load():
     for name, entry in data["games"].items():
         if isinstance(entry, str):
             data["games"][name] = {"dir": entry, "workflow": DEFAULT_WORKFLOW}
+            healed = True
+    # games.json written before per-game settings existed is missing the "setting" key --
+    # heal it to the blank default so get_setting() can assume the key is always present.
+    for name, entry in data["games"].items():
+        if "setting" not in entry:
+            entry["setting"] = DEFAULT_SETTING
             healed = True
     if healed:
         save(data)
@@ -89,6 +99,16 @@ def get_workflow(name):
     return Path(data["games"][name]["workflow"])
 
 
+def get_setting(name=None):
+    """The world/era setting string for `name` (or the active game if None), e.g. "medieval
+    fantasy world -- stone architecture, no modern technology". Blank string (DEFAULT_SETTING)
+    if never configured -- callers treat blank as "no setting to inject", not an error. Raises
+    KeyError for an unregistered name, same as get_workflow."""
+    data = load()
+    name = name or data["active"]
+    return data["games"][name]["setting"]
+
+
 def set_active(name):
     data = load()
     if name not in data["games"]:
@@ -97,12 +117,13 @@ def set_active(name):
     save(data)
 
 
-def add_game(name, path, workflow=None):
+def add_game(name, path, workflow=None, setting=""):
     name = (name or "").strip()
     if not name:
         raise ValueError("game name cannot be blank")
     data = load()
-    data["games"][name] = {"dir": str(path), "workflow": str(workflow or DEFAULT_WORKFLOW)}
+    data["games"][name] = {"dir": str(path), "workflow": str(workflow or DEFAULT_WORKFLOW),
+                           "setting": setting}
     save(data)
 
 
