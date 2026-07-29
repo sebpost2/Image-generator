@@ -37,6 +37,12 @@ CANDIDATES_DIR = WORKFLOW_PATH.parent / "candidates"
 # Updated after every successful generation; read (never blocks) before starting a new one.
 TIMING_FILE = WORKFLOW_PATH.parent / "gen_timing.json"
 
+WORKFLOW_FACE_VARIANT_PATH = Path("D:/2_MyScripts/PERSONAL/Image-generator/WORKFLOW_ANIME_FACE_VARIANT.json")
+# ComfyUI's LoadImage node reads by filename from its own configured input folder, not an
+# arbitrary absolute path -- mirrors COMFY_OUTPUT_DIR's hardcoded-absolute-path convention
+# already used in this file (this is the standard sibling folder in a portable ComfyUI install).
+COMFY_INPUT_DIR = Path("D:/ComfyUI_windows_portable/ComfyUI/input")
+
 # 1024x704 (2026-07-23 speed pass, down from 1216x832): same ~1.46 aspect ratio, both multiples
 # of 64 for valid SDXL latent dims -- ~40% fewer pixels per sampling step, the single biggest
 # remaining speed lever short of cutting the Face Detailer. A scene with an explicit `size` in
@@ -270,6 +276,111 @@ def choose_candidate(scene_id, candidate_path, output_dir=None):
     shutil.copy2(candidate_path, target)
     print(f"[gen] chosen {candidate_path.name} -> {target}")
     return target
+
+
+def _patch_face_variant_workflow(wf, image_filename, base_positive, base_negative,
+                                 wildcard_text, seed, denoise):
+    """Pure patch of the face-variant workflow dict (no network I/O) -- factored out so this
+    wiring is unit-testable without a running ComfyUI, since _run_face_variant itself always
+    submits to a live server. `base_positive`/`base_negative` go into nodes 6/7 (FaceDetailer's
+    own positive/negative context, matching the image being redrawn into -- NOT this step's own
+    short drafted text); `wildcard_text` is this step's drafted expression fragment, wrapped in
+    ComfyUI Impact Pack's "[CONCAT]" prefix so it's appended to node 6's text for the crop only,
+    same convention the source workflow's own wildcard fields already use."""
+    wf["20"]["inputs"]["image"] = image_filename
+    wf["6"]["inputs"]["text"] = base_positive
+    wf["7"]["inputs"]["text"] = base_negative
+    wf["15"]["inputs"]["wildcard"] = f"[CONCAT]{wildcard_text}"
+    wf["15"]["inputs"]["seed"] = seed
+    wf["15"]["inputs"]["denoise"] = denoise
+    return wf
+
+
+def _run_face_variant(scene_id, source_image_path, base_positive, base_negative, wildcard_text,
+                      seed=None, denoise=0.55, cancel_event=None):
+    """Mirrors _run_one but for the face-variant workflow: no base txt2img/highres-fix chain,
+    just the existing tuned FaceDetailer node (see WORKFLOW_ANIME_FACE_VARIANT.json) redrawing
+    the face of an already-committed image. Returns the raw ComfyUI output Path, uncommitted."""
+    if seed is None or seed < 0:
+        seed = random.randint(0, 2**32 - 1)
+
+    COMFY_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Unique per scene so two different scenes' variant generations (sequential today, but
+    # this keeps it safe if that ever changes) never clobber each other's staged source image.
+    staged_name = f"variant_src_{scene_id}.png"
+    shutil.copy2(Path(source_image_path), COMFY_INPUT_DIR / staged_name)
+
+    wf = json.loads(WORKFLOW_FACE_VARIANT_PATH.read_text(encoding="utf-8"))
+    wf = _patch_face_variant_workflow(wf, staged_name, base_positive, base_negative,
+                                      wildcard_text, seed, denoise)
+    wf["9"]["inputs"]["filename_prefix"] = f"newgame_variant_{scene_id}"
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise GenerationCancelled(f"{scene_id}: cancelled before submitting")
+
+    print(f"[gen] face-variant scene={scene_id} seed={seed} denoise={denoise}")
+    resp = post_prompt(wf)
+    pid = resp["prompt_id"]
+    t0 = time.time()
+    result = wait_for_result(pid, cancel_event=cancel_event)
+    elapsed = time.time() - t0
+    print(f"[gen] {scene_id}: face-variant done in {elapsed:.0f}s")
+    _record_timing(elapsed)
+    img_path = extract_image_path(result)
+    if not img_path or not img_path.exists():
+        raise RuntimeError("no se encontro imagen en el resultado de ComfyUI (face-variant)")
+    return img_path
+
+
+def generate_face_variant_scene(scene_id, source_image_path, base_positive, base_negative,
+                                wildcard_text, seed=None, denoise=0.55, output_dir=None):
+    """Face-variant counterpart to generate_scene(): redraw just the face against
+    source_image_path and commit the result as <scene_id>.png. Same output_dir contract as
+    generate_scene (explicit override, else games.get_active_dir())."""
+    img_path = _run_face_variant(scene_id, source_image_path, base_positive, base_negative,
+                                 wildcard_text, seed=seed, denoise=denoise)
+    out_dir = Path(output_dir) if output_dir is not None else games.get_active_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / f"{scene_id}.png"
+    shutil.copy2(img_path, target)
+    print(f"[gen] OK -> {target}")
+    return target
+
+
+def generate_face_variant_candidates(scene_id, source_image_path, base_positive, base_negative,
+                                     wildcard_text, count=3, denoise=0.55, on_candidate=None,
+                                     cancel_event=None):
+    """Face-variant counterpart to generate_candidates(): stage `count` fresh redraws for a
+    human to pick from under CANDIDATES_DIR/<scene_id>/, same wipe-then-restage, cancel_event,
+    and on_candidate contract as generate_candidates."""
+    scene_dir = CANDIDATES_DIR / scene_id
+    if scene_dir.exists():
+        shutil.rmtree(scene_dir)
+    scene_dir.mkdir(parents=True, exist_ok=True)
+
+    candidates = []
+    for i in range(1, count + 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"[gen] {scene_id}: cancelled, skipping remaining candidates ({i}/{count})")
+            break
+        print(f"[gen] {scene_id}: face-variant candidate {i}/{count}...")
+        try:
+            img_path = _run_face_variant(scene_id, source_image_path, base_positive,
+                                         base_negative, wildcard_text, seed=None,
+                                         denoise=denoise, cancel_event=cancel_event)
+        except GenerationCancelled as e:
+            print(f"[gen] {scene_id}: {e}")
+            break
+        dest = scene_dir / f"candidate_{i}.png"
+        shutil.copy2(img_path, dest)
+        print(f"[gen] {scene_id}: candidate {i}/{count} staged -> {dest}")
+        candidates.append(dest)
+        if on_candidate is not None:
+            try:
+                on_candidate(i, dest)
+            except Exception:
+                pass
+    return candidates
 
 
 def main():
