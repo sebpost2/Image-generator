@@ -1,0 +1,146 @@
+{
+  "4": {
+    "inputs": {
+      "ckpt_name": "oneObsession_v23.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "1) Checkpoint -- oneObsession_v23 (base Illustrious, anime)"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "masterpiece, best quality, absurdres, 1girl, solo, portrait",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Base scene POSITIVE -- patched at generation time to the variant_source_step's already-approved prompt, so FaceDetailer's own positive/negative context matches the image it's redrawing into. NOT this step's own drafted text (that goes into the wildcard below)."
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "worst quality, low quality, lowres, bad anatomy, bad hands, extra fingers, missing fingers, extra hands, extra limbs, extra arms, watermark, signature, jpeg artifacts, censored, mosaic censoring, blurry, 2girls, child, photorealistic, 3d, flat color, flat shading, empty eyes, blank eyes",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Base scene NEGATIVE -- patched at generation time to the variant_source_step's already-approved negative."
+    }
+  },
+  "20": {
+    "inputs": {
+      "image": "variant_src_placeholder.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Source image for the face-only redraw -- patched at generation time to the variant_source_step's committed PNG, staged into ComfyUI's own input/ folder first (see newgame_gen._run_face_variant)."
+    }
+  },
+  "14": {
+    "inputs": {
+      "model_name": "bbox/face_yolov8m.pt"
+    },
+    "class_type": "UltralyticsDetectorProvider",
+    "_meta": {
+      "title": "Detector de cara"
+    }
+  },
+  "14s": {
+    "inputs": {
+      "model_name": "sam_vit_b_01ec64.pth",
+      "device_mode": "AUTO"
+    },
+    "class_type": "SAMLoader",
+    "_meta": {
+      "title": "SAM -- afina la mascara del detailer"
+    }
+  },
+  "15": {
+    "inputs": {
+      "guide_size": 768,
+      "guide_size_for": true,
+      "max_size": 768,
+      "seed": 111222333,
+      "steps": 12,
+      "cfg": 6,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.55,
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.35,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 1.5,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "[CONCAT]portrait, close-up, face, 1girl",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 20,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": [
+        "20",
+        0
+      ],
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "bbox_detector": [
+        "14",
+        0
+      ],
+      "sam_model_opt": [
+        "14s",
+        0
+      ]
+    },
+    "class_type": "FaceDetailer",
+    "_meta": {
+      "title": "Face-variant redraw -- same tuned FaceDetailer as WORKFLOW_ANIME_ONEOBSESSION.json node 15 (denoise 0.55, bbox_threshold 0.35, confirmed A/B tested there), now fed from a LoadImage of a prior step's committed PNG instead of a fresh txt2img base. denoise/bbox values are an open empirical question for a full expression swap (e.g. calm -> ahegao) vs. the original use case of fixing a bad face at roughly the same expression -- re-tune after the first real use if identity/hair drifts at the crop edge."
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "anime_variant",
+      "images": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "9) Guardar imagen final"
+    }
+  }
+}
