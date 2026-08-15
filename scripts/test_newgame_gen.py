@@ -6,6 +6,49 @@ import unittest
 import newgame_gen
 
 
+class TestApplyLorasToWorkflow(unittest.TestCase):
+    def _base_workflow(self):
+        return {
+            "4": {"inputs": {"ckpt_name": "oneObsession_v23.safetensors"}},
+            "6": {"inputs": {"text": "positive", "clip": ["4", 1]}},
+            "3": {"inputs": {"model": ["4", 0], "positive": ["6", 0]}},
+        }
+
+    def test_empty_loras_leaves_workflow_untouched(self):
+        wf = self._base_workflow()
+        result = newgame_gen._apply_loras_to_workflow(wf, [])
+        self.assertEqual(result["3"]["inputs"]["model"], ["4", 0])
+        self.assertEqual(result["6"]["inputs"]["clip"], ["4", 1])
+
+    def test_single_lora_inserted_and_rewired(self):
+        wf = newgame_gen._apply_loras_to_workflow(self._base_workflow(),
+                                                   [("dogeza.safetensors", 0.8)])
+        self.assertEqual(wf["lora_1"]["inputs"]["lora_name"], "dogeza.safetensors")
+        self.assertEqual(wf["lora_1"]["inputs"]["strength_model"], 0.8)
+        self.assertEqual(wf["lora_1"]["inputs"]["strength_clip"], 0.8)
+        self.assertEqual(wf["lora_1"]["inputs"]["model"], ["4", 0])
+        self.assertEqual(wf["lora_1"]["inputs"]["clip"], ["4", 1])
+        self.assertEqual(wf["3"]["inputs"]["model"], ["lora_1", 0])
+        self.assertEqual(wf["6"]["inputs"]["clip"], ["lora_1", 1])
+
+    def test_multiple_loras_chained_in_order(self):
+        wf = newgame_gen._apply_loras_to_workflow(
+            self._base_workflow(),
+            [("dogeza.safetensors", 0.8), ("cum.safetensors", 1.0)])
+        self.assertEqual(wf["lora_1"]["inputs"]["model"], ["4", 0])
+        self.assertEqual(wf["lora_2"]["inputs"]["model"], ["lora_1", 0])
+        self.assertEqual(wf["lora_2"]["inputs"]["clip"], ["lora_1", 1])
+        self.assertEqual(wf["3"]["inputs"]["model"], ["lora_2", 0])
+        self.assertEqual(wf["6"]["inputs"]["clip"], ["lora_2", 1])
+
+    def test_lora_nodes_own_inputs_not_rewired_to_themselves(self):
+        wf = newgame_gen._apply_loras_to_workflow(
+            self._base_workflow(),
+            [("dogeza.safetensors", 0.8), ("cum.safetensors", 1.0)])
+        # lora_2 must still point at lora_1's outputs, not get swept up in the final rewire pass.
+        self.assertEqual(wf["lora_2"]["inputs"]["model"], ["lora_1", 0])
+
+
 class TestPatchFaceVariantWorkflow(unittest.TestCase):
     def _base_workflow(self):
         return {

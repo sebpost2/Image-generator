@@ -16,6 +16,7 @@ import sys
 import time
 import random
 import shutil
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -84,8 +85,16 @@ class GenerationCancelled(Exception):
 def post_prompt(workflow):
     data = json.dumps({"prompt": workflow, "client_id": "claude_newgame_gen"}).encode("utf-8")
     req = urllib.request.Request(f"{COMFY_URL}/prompt", data=data, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # ComfyUI's /prompt validates the whole graph server-side (e.g. a LoraLoader's
+        # lora_name must match a file it actually sees in models/loras) and returns a JSON body
+        # describing exactly what it rejected -- urlopen's default error swallows that body, so
+        # a bare "HTTP Error 400" tells us nothing about which node/field failed. Surface it.
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"ComfyUI rejected the workflow (HTTP {e.code}): {body}") from e
 
 
 def get_history(prompt_id):
@@ -129,7 +138,45 @@ def extract_image_path(result):
     return None
 
 
-def _run_one(scene_id, pos_file, neg_file, seed, width, height, cancel_event=None):
+def _apply_loras_to_workflow(wf, loras):
+    """Insert one LoraLoader node per (filename, strength) pair, chained off node '4'
+    (CheckpointLoaderSimple -- every workflow this pipeline submits uses that id/output
+    convention: model=output 0, clip=output 1), then rewire every other existing node's
+    model/clip input that pointed straight at the checkpoint to the end of the chain instead.
+    Empty `loras` leaves wf untouched -- generation uses the checkpoint's own weights, same as
+    before this existed. Node ids are computed from `wf` itself (not hardcoded), so this works
+    for any workflow following the same checkpoint-node convention."""
+    if not loras:
+        return wf
+    model_ref = ["4", 0]
+    clip_ref = ["4", 1]
+    original_node_ids = list(wf.keys())
+    for i, (filename, strength) in enumerate(loras, start=1):
+        node_id = f"lora_{i}"
+        wf[node_id] = {
+            "inputs": {
+                "lora_name": filename,
+                "strength_model": strength,
+                "strength_clip": strength,
+                "model": model_ref,
+                "clip": clip_ref,
+            },
+            "class_type": "LoraLoader",
+            "_meta": {"title": f"LoRA {i}: {filename} (auto-inserted by loras.py selection)"},
+        }
+        model_ref = [node_id, 0]
+        clip_ref = [node_id, 1]
+    for node_id in original_node_ids:
+        inputs = wf[node_id]["inputs"]
+        for key, val in list(inputs.items()):
+            if val == ["4", 0]:
+                inputs[key] = model_ref
+            elif val == ["4", 1]:
+                inputs[key] = clip_ref
+    return wf
+
+
+def _run_one(scene_id, pos_file, neg_file, seed, width, height, cancel_event=None, loras=None):
     """
     Build the LUSTIFY workflow for one scene, submit it to ComfyUI, wait for the result, and
     return the raw ComfyUI source image Path -- WITHOUT copying anything into the game repo.
@@ -145,6 +192,10 @@ def _run_one(scene_id, pos_file, neg_file, seed, width, height, cancel_event=Non
       nodes 15/16/17 = FaceDetailer / Hand Detailer / Body Detailer seeds (always randomized,
                        else composition repeats)
       node 5  = empty latent size, node 6/7 = positive/negative text, node 9 = filename prefix
+
+    loras: optional list of (filename, strength) pairs from loras.resolve_loras_for_generation --
+    each becomes a LoraLoader node actually applying the model weights, not just a prompt-text
+    trigger word (that's a separate, additional step already done before this is called).
     """
     pos_file = Path(pos_file)
     neg_file = Path(neg_file)
@@ -153,12 +204,18 @@ def _run_one(scene_id, pos_file, neg_file, seed, width, height, cancel_event=Non
         seed = random.randint(0, 2**32 - 1)
 
     positive = pos_file.read_text(encoding="utf-8").strip()
-    negative = neg_file.read_text(encoding="utf-8").strip()
+    # Anti-duplication guard: SDXL-family checkpoints at tall aspect ratios are prone to
+    # rendering the same character twice side-by-side ("twinning"). Narrow on purpose --
+    # doesn't touch 2girls/multiple_girls so legitimate multi-character scenes are unaffected.
+    negative = (neg_file.read_text(encoding="utf-8").strip()
+                + ", clone, twins, siamese_twins, duplicate, multiple_views, split_screen, "
+                  "mirror_image")
 
     # Resolved live (not WORKFLOW_PATH) so each game's own checkpoint/workflow is used --
     # e.g. oneObsession's WORKFLOW_ANIME_ONEOBSESSION.json shares the same node layout
     # (seed/size/prompt/filename node ids) as LUSTIFY's, so no other logic here needs to change.
     wf = json.loads(games.get_active_workflow().read_text(encoding="utf-8"))
+    wf = _apply_loras_to_workflow(wf, loras)
     wf["3"]["inputs"]["seed"] = seed
     wf["19"]["inputs"]["seed"] = random.randint(0, 2**32 - 1)  # Highres-fix KSampler
     wf["15"]["inputs"]["seed"] = random.randint(0, 2**32 - 1)  # FaceDetailer — randomizar o repite composicion
@@ -189,7 +246,7 @@ def _run_one(scene_id, pos_file, neg_file, seed, width, height, cancel_event=Non
 
 
 def generate_scene(scene_id, pos_file, neg_file, seed=None, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
-                   output_dir=None):
+                   output_dir=None, loras=None):
     """
     Generate one scene and copy the result into the game repo as <scene_id>.png. Returns the
     target Path. This is the unattended one-image-per-scene path (batch.phase_generate uses it);
@@ -198,8 +255,10 @@ def generate_scene(scene_id, pos_file, neg_file, seed=None, width=DEFAULT_WIDTH,
     output_dir: where the PNG lands; when None it is resolved live via games.get_active_dir()
     so the currently-selected game wins. Pass an explicit dir to override (batch.py does this
     per manifest row so mixed-game manifests always land in the right place).
+
+    loras: optional list of (filename, strength) pairs, see _run_one.
     """
-    img_path = _run_one(scene_id, pos_file, neg_file, seed, width, height)
+    img_path = _run_one(scene_id, pos_file, neg_file, seed, width, height, loras=loras)
 
     out_dir = Path(output_dir) if output_dir is not None else games.get_active_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -211,7 +270,7 @@ def generate_scene(scene_id, pos_file, neg_file, seed=None, width=DEFAULT_WIDTH,
 
 
 def generate_candidates(scene_id, pos_file, neg_file, count=3, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
-                        on_candidate=None, cancel_event=None):
+                        on_candidate=None, cancel_event=None, loras=None):
     """
     Supervised path: generate `count` independent draws of one scene (each a fresh random seed,
     never a fixed one -- the whole point is different draws to pick between) and stage them under
@@ -231,6 +290,9 @@ def generate_candidates(scene_id, pos_file, neg_file, count=3, width=DEFAULT_WID
     Nothing here is authoritative: the human picks one and choose_candidate() commits it. The
     scene's candidate folder is wiped at the start of each call so it only ever holds the current
     round's draws, never an accumulation across rounds.
+
+    loras: optional list of (filename, strength) pairs, see _run_one -- same LoRAs apply to
+    every candidate draw in this batch.
     """
     scene_dir = CANDIDATES_DIR / scene_id
     if scene_dir.exists():
@@ -247,7 +309,7 @@ def generate_candidates(scene_id, pos_file, neg_file, count=3, width=DEFAULT_WID
         print(f"[gen] {scene_id}: candidate {i}/{count}...")
         try:
             img_path = _run_one(scene_id, pos_file, neg_file, None, width, height,
-                                cancel_event=cancel_event)
+                                cancel_event=cancel_event, loras=loras)
         except GenerationCancelled as e:
             print(f"[gen] {scene_id}: {e}")
             break
@@ -297,10 +359,14 @@ def _patch_face_variant_workflow(wf, image_filename, base_positive, base_negativ
 
 
 def _run_face_variant(scene_id, source_image_path, base_positive, base_negative, wildcard_text,
-                      seed=None, denoise=0.55, cancel_event=None):
+                      seed=None, denoise=0.55, cancel_event=None, loras=None):
     """Mirrors _run_one but for the face-variant workflow: no base txt2img/highres-fix chain,
     just the existing tuned FaceDetailer node (see WORKFLOW_ANIME_FACE_VARIANT.json) redrawing
-    the face of an already-committed image. Returns the raw ComfyUI output Path, uncommitted."""
+    the face of an already-committed image. Returns the raw ComfyUI output Path, uncommitted.
+
+    loras: optional list of (filename, strength) pairs, see _run_one -- the face-variant
+    workflow uses the same node '4' CheckpointLoaderSimple convention as the main workflow, so
+    _apply_loras_to_workflow works unchanged here."""
     if seed is None or seed < 0:
         seed = random.randint(0, 2**32 - 1)
 
@@ -311,6 +377,7 @@ def _run_face_variant(scene_id, source_image_path, base_positive, base_negative,
     shutil.copy2(Path(source_image_path), COMFY_INPUT_DIR / staged_name)
 
     wf = json.loads(WORKFLOW_FACE_VARIANT_PATH.read_text(encoding="utf-8"))
+    wf = _apply_loras_to_workflow(wf, loras)
     wf = _patch_face_variant_workflow(wf, staged_name, base_positive, base_negative,
                                       wildcard_text, seed, denoise)
     wf["9"]["inputs"]["filename_prefix"] = f"newgame_variant_{scene_id}"
@@ -333,12 +400,15 @@ def _run_face_variant(scene_id, source_image_path, base_positive, base_negative,
 
 
 def generate_face_variant_scene(scene_id, source_image_path, base_positive, base_negative,
-                                wildcard_text, seed=None, denoise=0.55, output_dir=None):
+                                wildcard_text, seed=None, denoise=0.55, output_dir=None,
+                                loras=None):
     """Face-variant counterpart to generate_scene(): redraw just the face against
     source_image_path and commit the result as <scene_id>.png. Same output_dir contract as
-    generate_scene (explicit override, else games.get_active_dir())."""
+    generate_scene (explicit override, else games.get_active_dir()).
+
+    loras: optional list of (filename, strength) pairs, see _run_face_variant."""
     img_path = _run_face_variant(scene_id, source_image_path, base_positive, base_negative,
-                                 wildcard_text, seed=seed, denoise=denoise)
+                                 wildcard_text, seed=seed, denoise=denoise, loras=loras)
     out_dir = Path(output_dir) if output_dir is not None else games.get_active_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / f"{scene_id}.png"
@@ -349,10 +419,13 @@ def generate_face_variant_scene(scene_id, source_image_path, base_positive, base
 
 def generate_face_variant_candidates(scene_id, source_image_path, base_positive, base_negative,
                                      wildcard_text, count=3, denoise=0.55, on_candidate=None,
-                                     cancel_event=None):
+                                     cancel_event=None, loras=None):
     """Face-variant counterpart to generate_candidates(): stage `count` fresh redraws for a
     human to pick from under CANDIDATES_DIR/<scene_id>/, same wipe-then-restage, cancel_event,
-    and on_candidate contract as generate_candidates."""
+    and on_candidate contract as generate_candidates.
+
+    loras: optional list of (filename, strength) pairs, see _run_face_variant -- same LoRAs
+    apply to every candidate draw in this batch."""
     scene_dir = CANDIDATES_DIR / scene_id
     if scene_dir.exists():
         shutil.rmtree(scene_dir)
@@ -367,7 +440,7 @@ def generate_face_variant_candidates(scene_id, source_image_path, base_positive,
         try:
             img_path = _run_face_variant(scene_id, source_image_path, base_positive,
                                          base_negative, wildcard_text, seed=None,
-                                         denoise=denoise, cancel_event=cancel_event)
+                                         denoise=denoise, cancel_event=cancel_event, loras=loras)
         except GenerationCancelled as e:
             print(f"[gen] {scene_id}: {e}")
             break

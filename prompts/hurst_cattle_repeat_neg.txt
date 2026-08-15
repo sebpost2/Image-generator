@@ -1,0 +1,1 @@
+worst_quality, lowres, bad_anatomy, bad_hands, missing_fingers, text, watermark, words, letters, english_text, empty_eyes, blank_eyes, car, vehicle, road sign, power line, telephone pole, modern technology, graphic tee, smartphone

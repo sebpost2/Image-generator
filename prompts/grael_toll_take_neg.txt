@@ -1,0 +1,1 @@
+worst_quality, low_quality, lowres, bad_anatomy, bad_hands, extra_fingers, missing_fingers, extra_hands, extra_limbs, extra_arms, flat_color, flat_shading, empty_eyes, blank_eyes, text, watermark, words, letters, english_text, japanese_text, loli, shota, child, aged_down, car, vehicle, road sign, power line, telephone pole, modern technology, graphic tee, smartphone
